@@ -1,0 +1,8 @@
+{
+    "fastq_files": [],
+    "bam_files": [],
+    "vcf_files": [
+        "/datasets/dsc180a-wi20-public/Genome/vcf/ALL.chr22.shapeit2_integrated_v1a.GRCh38.20181129.phased.vcf.gz"
+    ],
+    "datapath": "/datasets/home/home-00/01/001/ds180awi20ai/a2/data/"
+}
