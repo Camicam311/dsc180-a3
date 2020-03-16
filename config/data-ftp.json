@@ -1,0 +1,21 @@
+{
+    "data": {
+        "fastq_files": [
+            "/vol1/ftp/phase3/data/HG00096/sequence_read/SRR062634_1.filt.fastq.gz"
+        ],
+        "bam_files": [
+            "/vol1/ftp/phase3/data/HG00097/alignment/HG00097.chrom20.ILLUMINA.bwa.GBR.low_coverage.20130415.bam"
+        ],
+        "vcf_files": [
+            "/vol1/ftp/phase3/integrated_sv_map/ALL.wgs.mergedSV.v8.20130502.svs.genotypes.vcf.gz"
+        ], 
+        "ref_file": "/vol1/ftp/technical/reference/human_g1k_v37.fasta.gz",
+        "ftp_path": "ftp.1000genomes.ebi.ac.uk"
+    },
+    "datapath": "./data/",
+    "options": {
+        "maf": 0.05,
+        "geno": 0.1,
+        "mind": 0.05
+    }
+}

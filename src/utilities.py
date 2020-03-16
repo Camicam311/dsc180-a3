@@ -1,8 +1,58 @@
 import os
 import shutil
 import shlex
+import sys
+import subprocess as sp
+import time
+import matplotlib.pyplot as plt
+import re
+import json
+import time
+sys.path.append('./src/')
+from utilities import *
+from ftplib import FTP
 
-def download_fastqs(fastq_files, ref_file, datapath):
+def download(datapath, fastq_files, bam_files, vcf_files, ref_file, ftp_path=None):
+    # Create data directories
+    if not os.path.exists(datapath):
+        os.mkdir(datapath)
+    if not os.path.exists(datapath + 'fastq_files/'):
+        os.mkdir(datapath + 'fastq_files/')
+    if not os.path.exists(datapath + 'bam_files/'):
+        os.mkdir(datapath + 'bam_files/')
+    if not os.path.exists(datapath + 'vcf_files/'):
+        os.mkdir(datapath + 'vcf_files/')
+    if not os.path.exists(datapath + 'ref_genome/'):
+        os.mkdir(datapath + 'ref_genome/')
+    
+    f = None
+    if ftp_path:
+        f = FTP(ftp_path)
+        f.login()
+
+    # Copy or download data
+    procs = []
+    print("Copying FASTQ files...")
+    t1 = time.time()
+    download_fastqs(fastq_files, ref_file, datapath, f)
+    t2 = time.time()
+    print("FASTQ files done. Time: {0:.0f} s".format(t2 - t1))
+    print("Copying BAM files...")
+    download_bams(bam_files, datapath + 'bam_files/', f)
+    t1 = time.time()
+    print("BAM files done. Time: {0:.0f} s".format(t1 - t2))
+    print("Copying VCF files...")
+    download_vcfs(vcf_files, datapath + 'vcf_files/', f)
+    t2 = time.time()
+    print("VCF files done. Time: {0:.0f} s".format(t2 - t1))
+        
+def process(datapath, ref_file, options):
+    
+    process_fastq(ref_file, datapath)
+    process_bam(ref_file, datapath)
+    process_vcf(datapath, **options)
+    
+def download_fastqs(fastq_files, ref_file, datapath, ftp=None):
     """
     Copies/Downloads FASTQ files from defined paths to the local data directory
 
@@ -11,11 +61,30 @@ def download_fastqs(fastq_files, ref_file, datapath):
     ref_file -- string representing the path to the reference genome
     datapath -- string representing the local path to copy/download data into
     """
-    for fastq_file in fastq_files:
-        cmd = shlex.split('cp -r ' + fastq_file + ' ' + datapath)
+    if ftp:
+        for fastq_file in fastq_files:
+            lastsep = fastq_file.rindex("/") + 1
+            fqpath = fastq_file[:lastsep]
+            fqname = fastq_file[lastsep:]
+            with open(datapath + 'fastq_files/' + fqname, 'wb') as fp:
+                ftp.cwd(fqpath)
+                ftp.retrbinary('RETR ' + fqname, fp.write)
+                fp.close()
+        lastsep = ref_file.rindex("/") + 1
+        refpath = ref_file[:lastsep]
+        refname = ref_file[lastsep:]
+        with open(datapath + 'ref_genome/' + refname, 'wb') as fp:
+            ftp.cwd(refpath)
+            ftp.retrbinary('RETR ' + refname, fp.write)
+            fp.close()
+    else:
+        for fastq_file in fastq_files:
+            cmd = shlex.split('cp -r ' + fastq_file + ' ' + datapath + 'fastq_files/')
+            sp.run(cmd)
+        cmd = shlex.split('cp -r ' + ref_file + ' ' + datapath + 'ref_genome/')
         sp.run(cmd)
 
-def download_bams(bam_files, datapath):
+def download_bams(bam_files, datapath, ftp=None):
     """
     Copies/Downloads BAM files from defined paths to the local data directory
 
@@ -23,12 +92,21 @@ def download_bams(bam_files, datapath):
     bam_files -- array of strings representing paths to bam files
     datapath -- string representing the local path to copy/download data into
     """
-    for bam_file in bam_files:
-        cmd = shlex.split('cp -r ' + bam_file + ' ' + datapath)
-        sp.run(cmd)
+    if ftp:
+        for bam_file in bam_files:
+            lastsep = bam_file.rindex("/") + 1
+            bampath = bam_file[:lastsep]
+            bamname = bam_file[lastsep:]
+            with open(datapath + bamname, 'wb') as fp:
+                ftp.cwd(bampath)
+                ftp.retrbinary('RETR ' + bamname, fp.write)
+                fp.close()
+    else:
+        for bam_file in bam_files:
+            cmd = shlex.split('cp -r ' + bam_file + ' ' + datapath)
+            sp.run(cmd)
 
-
-def download_vcfs(vcf_files, datapath):
+def download_vcfs(vcf_files, datapath, ftp=None):
     """
     Copies/Downloads VCF files from defined paths to the local data directory,
     and unpacks zipped files and edits the first line to make sure the VCF
@@ -38,23 +116,40 @@ def download_vcfs(vcf_files, datapath):
     vcf_files -- array of strings representing paths to vcf files
     datapath -- string representing the local path to copy/download data into
     """
-    for vcf_file in vcf_files:
-        cmd = shlex.split('cp -r ' + vcf_file + ' ' + datapath)
-        sp.run(cmd)
-        cmd = shlex.split('cp -r ' + vcf_file + '.tbi ' + datapath)
-        sp.run(cmd)
+    if ftp:
+        for vcf_file in vcf_files:
+            lastsep = vcf_file.rindex("/") + 1
+            vcfpath = vcf_file[:lastsep]
+            vcfname = vcf_file[lastsep:]
+            with open(datapath + vcfname, 'wb') as fp:
+                ftp.cwd(vcfpath)
+                ftp.retrbinary('RETR ' + vcfname, fp.write)
+                fp.close()
+            with open(datapath + vcfname + '.tbi', 'wb') as fp:
+                ftp.cwd(vcfpath)
+                ftp.retrbinary('RETR ' + vcfname + '.tbi', fp.write)
+                fp.close()
+    else:
+        for vcf_file in vcf_files:
+            cmd = shlex.split('cp -r ' + vcf_file + ' ' + datapath)
+            sp.run(cmd)
+            cmd = shlex.split('cp -r ' + vcf_file + '.tbi ' + datapath)
+            sp.run(cmd)
 
-
-def process_fastq(datapath):
+def process_fastq(ref_file, datapath):
+    ref_file = re.findall("([^/]+$)", ref_file)[-1]
+    path_to_ref = datapath + 'ref_genome/' + ref_file
     for fastq_file in os.listdir(datapath + 'fastq_files/'):
-        cmd = shlex.split('bwa mem ' + path_to_ref + ' ' + fastq_file + ' | samtools sort -o output.bam -')
+        fname = re.findall(".+?((?=\.fastq)|(?=\.fq))", fastq_file)[-1]
+        cmd = shlex.split('bwa mem ' + path_to_ref + ' ' + datapath + 'fastq_files/'\
+                          + fastq_file + ' | samtools sort -o ' + fname + '.bam -')
         proc = sp.run(cmd)
 
 def process_bam(datapath):
     for bam_file in os.listdir(datapath + 'bam_files/'):
         pass
 
-def process_vcfs(datapath, maf=0.05, geno=0.1, mind=0.05):
+def process_vcf(datapath, maf=0.05, geno=0.1, mind=0.05):
     """
     Processes VCF files and outputs a PCA plot
 
@@ -66,14 +161,14 @@ def process_vcfs(datapath, maf=0.05, geno=0.1, mind=0.05):
     """
     fix_vcf_version(datapath)
     filter_and_combine_vcfs(datapath)
-
+    os.makedir(datapath + 'output/')
+    os.makedir(datapath + 'plots/')
     for vcf_file in os.listdir(datapath + 'vcf_files/'):
         outname = re.findall('chr[0-9]{1,2}|$', vcf_file)[0]
         outname = outname if outname != '' else 'unknown'
-        os.makedirs(outpath + outname, exist_ok=True)
         # shlex.split parses a terminal command into a list for subprocess
-        cmd = shlex.split( path_to_plink + '\
-            --vcf ' + datapath + vcf_file + ' \
+        cmd = shlex.split('plink2 \
+            --vcf ' + datapath + 'vcf_files/' + vcf_file + ' \
             --make-bed \
             --pca approx biallelic-var-wts\
             --snps-only \
@@ -81,13 +176,13 @@ def process_vcfs(datapath, maf=0.05, geno=0.1, mind=0.05):
             --geno ' + geno + ' \
             --mind ' + mind + ' \
             --recode \
-            --out ' + outpath + outname + '/' + outname)
+            --out ' + datapath + 'output/' + outname)
         sp.run(cmd)
-        vec = pd.read_csv(outpath + outname + '/' + outname + '.eigenvec', sep='\t')
-        val = pd.read_csv(outpath + outname + '/' + outname + '.eigenval')
+        vec = pd.read_csv(datapath + 'output/' + outname + '.eigenvec', sep='\t')
+        val = pd.read_csv(datapath + 'output/' + outname + '.eigenval')
         pca_plot = sns.scatterplot(vec['PC1'], vec['PC2'])
-        pca_plot.figure.savefig(outpath + 'plots/' + outname + '.png')
-        print('PCA Plot saved to ' + outpath + 'plots/')
+        pca_plot.figure.savefig( + 'plots/' + outname + '.png')
+        print('PCA Plot saved to ' + datapath + 'plots/')
 
 def fix_vcf_version(datapath):
     """
@@ -133,6 +228,3 @@ def filter_and_combine_vcfs(datapath, snp_treshold=0.05):
     snp_treshold -- how common SNP must be to be included
     """
     
-
-
-

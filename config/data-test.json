@@ -1,8 +1,20 @@
 {
-    "fastq_files": [],
-    "bam_files": [],
-    "vcf_files": [
-        "/datasets/dsc180a-wi20-public/Genome/vcf/ALL.chr22.shapeit2_integrated_v1a.GRCh38.20181129.phased.vcf.gz"
-    ],
-    "datapath": "/datasets/home/home-00/01/001/ds180awi20ai/a2/data/"
+    "data": {
+        "fastq_files": [
+            "/datasets/dsc180a-wi20-public/Genome/fastq/testfile/SP1.fq"
+        ],
+        "bam_files": [
+            "/datasets/dsc180a-wi20-public/Genome/bam/testfile/HG00154.mapped.ILLUMINA.bwa.GBR.low_coverage.20101123.bam"
+        ],
+        "vcf_files": [
+            "/datasets/dsc180a-wi20-public/Genome/vcf/ALL.chr22.shapeit2_integrated_v1a.GRCh38.20181129.phased.vcf.gz"
+        ],
+        "ref_file": "/datasets/dsc180a-wi20-public/Genome/resources/hg38/Homo_sapiens_assembly38.fasta.gz"
+    },
+    "datapath": "./data/",
+    "options": {
+        "maf": 0.05,
+        "geno": 0.1,
+        "mind": 0.05
+    }
 }
