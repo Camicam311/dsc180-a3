@@ -1,3 +1,4 @@
+import pandas as pd
 import os
 import shutil
 import shlex
@@ -5,11 +6,11 @@ import sys
 import subprocess as sp
 import time
 import matplotlib.pyplot as plt
+import seaborn as sns
 import re
 import json
 import time
-sys.path.append('./src/')
-from utilities import *
+import gzip
 from ftplib import FTP
 
 def download(datapath, fastq_files, bam_files, vcf_files, ref_file, ftp_path=None):
@@ -31,26 +32,38 @@ def download(datapath, fastq_files, bam_files, vcf_files, ref_file, ftp_path=Non
         f.login()
 
     # Copy or download data
-    procs = []
-    print("Copying FASTQ files...")
+    print("--------------------Downloading--------------------")
+    print("Downloading FASTQ files...")
     t1 = time.time()
     download_fastqs(fastq_files, ref_file, datapath, f)
     t2 = time.time()
     print("FASTQ files done. Time: {0:.0f} s".format(t2 - t1))
-    print("Copying BAM files...")
+    print("Downloading BAM files...")
     download_bams(bam_files, datapath + 'bam_files/', f)
     t1 = time.time()
     print("BAM files done. Time: {0:.0f} s".format(t1 - t2))
-    print("Copying VCF files...")
+    print("Downloading VCF files...")
     download_vcfs(vcf_files, datapath + 'vcf_files/', f)
     t2 = time.time()
     print("VCF files done. Time: {0:.0f} s".format(t2 - t1))
         
 def process(datapath, ref_file, options):
     
-    process_fastq(ref_file, datapath)
-    process_bam(ref_file, datapath)
+    print("--------------------Processing---------------------")
+    # Still having issues with FASTQ and BAM
+#     print("Processing FASTQ files...")
+#     t1 = time.time()
+#     process_fastq(datapath, ref_file)
+#     t2 = time.time()
+#     print("FASTQ files done. Time: {0:.0f} s".format(t2 - t1))
+#     print("Processing BAM files...")
+#     process_bam(datapath, ref_file)
+#     t1 = time.time()
+#     print("BAM files done. Time: {0:.0f} s".format(t1 - t2))
+    print("Processing VCF files...")
     process_vcf(datapath, **options)
+    t2 = time.time()
+    print("VCF files done. Time: {0:.0f} s".format(t2 - t1))
     
 def download_fastqs(fastq_files, ref_file, datapath, ftp=None):
     """
@@ -62,27 +75,34 @@ def download_fastqs(fastq_files, ref_file, datapath, ftp=None):
     datapath -- string representing the local path to copy/download data into
     """
     if ftp:
+        # Download from ftp server
         for fastq_file in fastq_files:
+            # Split file up into directory and file name
             lastsep = fastq_file.rindex("/") + 1
             fqpath = fastq_file[:lastsep]
             fqname = fastq_file[lastsep:]
             with open(datapath + 'fastq_files/' + fqname, 'wb') as fp:
+                # Change directory then download file
                 ftp.cwd(fqpath)
                 ftp.retrbinary('RETR ' + fqname, fp.write)
                 fp.close()
+        # Split file up into directory and file name for reference genome
         lastsep = ref_file.rindex("/") + 1
         refpath = ref_file[:lastsep]
         refname = ref_file[lastsep:]
         with open(datapath + 'ref_genome/' + refname, 'wb') as fp:
+            # Change directory then download file
             ftp.cwd(refpath)
             ftp.retrbinary('RETR ' + refname, fp.write)
             fp.close()
     else:
+        # Copy files into local directory
         for fastq_file in fastq_files:
             cmd = shlex.split('cp -r ' + fastq_file + ' ' + datapath + 'fastq_files/')
             sp.run(cmd)
-        cmd = shlex.split('cp -r ' + ref_file + ' ' + datapath + 'ref_genome/')
-        sp.run(cmd)
+        for ext in ['', '.gz', '.amb', '.ann', '.bwt', '.pac', '.sa', '.fai']:
+            cmd = shlex.split('cp -r ' + ref_file + ext + ' ' + datapath + 'ref_genome/')
+            sp.run(cmd)
 
 def download_bams(bam_files, datapath, ftp=None):
     """
@@ -136,18 +156,24 @@ def download_vcfs(vcf_files, datapath, ftp=None):
             cmd = shlex.split('cp -r ' + vcf_file + '.tbi ' + datapath)
             sp.run(cmd)
 
-def process_fastq(ref_file, datapath):
+def process_fastq(datapath, ref_file):
     ref_file = re.findall("([^/]+$)", ref_file)[-1]
     path_to_ref = datapath + 'ref_genome/' + ref_file
     for fastq_file in os.listdir(datapath + 'fastq_files/'):
         fname = re.findall(".+?((?=\.fastq)|(?=\.fq))", fastq_file)[-1]
         cmd = shlex.split('bwa mem ' + path_to_ref + ' ' + datapath + 'fastq_files/'\
                           + fastq_file + ' | samtools sort -o ' + fname + '.bam -')
-        proc = sp.run(cmd)
+        sp.run(cmd)
 
-def process_bam(datapath):
+def process_bam(datapath, ref_file):
+    ref_file = re.findall("([^/]+$)", ref_file)[-1]
+    path_to_ref = datapath + 'ref_genome/' + ref_file
+    cmd = 'samtools mpileup ' + path_to_ref + ' '
     for bam_file in os.listdir(datapath + 'bam_files/'):
-        pass
+         cmd += bam_file + ' '
+    cmd += datapath + 'vcf_files/bam_output.vcf'
+    cmd = shlex.split(cmd)
+    sp.run(cmd)
 
 def process_vcf(datapath, maf=0.05, geno=0.1, mind=0.05):
     """
@@ -159,30 +185,50 @@ def process_vcf(datapath, maf=0.05, geno=0.1, mind=0.05):
     geno -- Maximum missingness of variant before variant is excluded
     mind -- Maximum missingness of sample before sample is excluded
     """
-    fix_vcf_version(datapath)
-    filter_and_combine_vcfs(datapath)
-    os.makedir(datapath + 'output/')
-    os.makedir(datapath + 'plots/')
-    for vcf_file in os.listdir(datapath + 'vcf_files/'):
-        outname = re.findall('chr[0-9]{1,2}|$', vcf_file)[0]
-        outname = outname if outname != '' else 'unknown'
-        # shlex.split parses a terminal command into a list for subprocess
-        cmd = shlex.split('plink2 \
-            --vcf ' + datapath + 'vcf_files/' + vcf_file + ' \
-            --make-bed \
-            --pca approx biallelic-var-wts\
-            --snps-only \
-            --maf ' + maf + ' \
-            --geno ' + geno + ' \
-            --mind ' + mind + ' \
-            --recode \
-            --out ' + datapath + 'output/' + outname)
-        sp.run(cmd)
-        vec = pd.read_csv(datapath + 'output/' + outname + '.eigenvec', sep='\t')
-        val = pd.read_csv(datapath + 'output/' + outname + '.eigenval')
-        pca_plot = sns.scatterplot(vec['PC1'], vec['PC2'])
-        pca_plot.figure.savefig( + 'plots/' + outname + '.png')
-        print('PCA Plot saved to ' + datapath + 'plots/')
+    #fix_vcf_version(datapath + 'vcf_files/')
+    #filter_and_combine_vcfs(datapath + 'vcf_files/')
+    if not os.path.exists(datapath + 'output/'):
+        os.mkdir(datapath + 'output/')
+    if not os.path.exists(datapath + 'plots/'):
+        os.mkdir(datapath + 'plots/')
+    if not os.path.exists(datapath + 'final_vcfs/'):
+        os.mkdir(datapath + 'final_vcfs/')
+    files = []
+    vcf_file = os.listdir(datapath + 'vcf_files/')[-1]
+    # vcftools giving me weird errors
+#     for vcf_file in os.listdir(datapath + 'vcf_files/'):
+#         outname = re.findall('chr[0-9]{1,2}|$', vcf_file)[0]
+#         outname = outname if outname != '' else 'unknown'
+#         cmd = 'vcftools --gzvcf ' + datapath + 'vcf_files/' + vcf_file\
+#             + ' --maf 0.05 --recode --out ' + datapath + 'final_vcfs/' + vcf_file
+#         print(cmd)
+#         cmd = shlex.split(cmd)
+#         sp.run(cmd)
+#         cmd = shlex.split('tabix -p vcf ' + datapath + 'final_vcfs/' + vcf_file)
+#         files.append(datapath + 'final_vcfs/' + vcf_file)
+    # merge VCFs into one VCF
+#     cmd = shlex.split('vcf-merge ' + ' '.join(files) + ' | bgzip -c > merged_vcf.vcf ')
+#     sp.run(cmd)
+#     cmd = shlex.split('tabix -p vcf ' + datapath + 'merged_vcf.vcf')
+#     sp.run(cmd)
+    # run PCA
+    cmd = 'plink2 \
+        --vcf ' + datapath + 'vcf_files/' + vcf_file + '\
+        --make-bed \
+        --pca \
+        --snps-only \
+        --maf ' + str(maf) + ' \
+        --geno ' + str(geno) + ' \
+        --mind ' + str(mind) + ' \
+        --recode \
+        --out ' + datapath + 'output/final'
+    cmd = shlex.split(cmd)
+    sp.run(cmd)
+    vec = pd.read_csv(datapath + 'output/final.eigenvec', sep='\t')
+    val = pd.read_csv(datapath + 'output/final.eigenval')
+    pca_plot = sns.scatterplot(vec['PC1'], vec['PC2'])
+    pca_plot.figure.savefig( + 'plots/final.png')
+    print('PCA Plot saved to ' + datapath + 'plots/final.png')
 
 def fix_vcf_version(datapath):
     """
@@ -195,7 +241,7 @@ def fix_vcf_version(datapath):
     for vcf_file in os.listdir(datapath):
         # if zipped, unzip vcf file and assert that version is < 4.2
         if vcf_file[-7:] == '.vcf.gz':
-            with gzip.open(vcf_file, 'rt') as f:
+            with gzip.open(datapath + vcf_file, 'rt') as f:
                 head = f.readline()
                 # if version not compatible with vcftools, have to fix it
                 if 'VCFv4.3' in head:
@@ -210,7 +256,7 @@ def fix_vcf_version(datapath):
                     sp.run(cmd)
         # assert that version is < 4.2
         elif vcf_file[-4:] == '.vcf':
-            with open(vcf_file, 'rt') as f:
+            with open(datapath + vcf_file, 'rt') as f:
                 head = f.readline()
                 if 'VCFv4.3' in head:
                     fname = re.findall("([^\/]+$)", vcf_file)[-1][:-3]

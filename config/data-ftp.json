@@ -10,7 +10,7 @@
             "/vol1/ftp/phase3/integrated_sv_map/ALL.wgs.mergedSV.v8.20130502.svs.genotypes.vcf.gz"
         ], 
         "ref_file": "/vol1/ftp/technical/reference/human_g1k_v37.fasta.gz",
-        "ftp_path": "ftp.1000genomes.ebi.ac.uk"
+        "ftp_path": "ftp-trace.ncbi.nih.gov"
     },
     "datapath": "./data/",
     "options": {

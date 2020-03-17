@@ -9,7 +9,7 @@
         "vcf_files": [
             "/datasets/dsc180a-wi20-public/Genome/vcf/ALL.chr22.shapeit2_integrated_v1a.GRCh38.20181129.phased.vcf.gz"
         ],
-        "ref_file": "/datasets/dsc180a-wi20-public/Genome/resources/hg38/Homo_sapiens_assembly38.fasta.gz"
+        "ref_file": "/datasets/dsc180a-wi20-public/Genome/resources/hg38/Homo_sapiens_assembly38.fasta"
     },
     "datapath": "./data/",
     "options": {
