@@ -185,35 +185,26 @@ def process_vcf(datapath, maf=0.05, geno=0.1, mind=0.05):
     geno -- Maximum missingness of variant before variant is excluded
     mind -- Maximum missingness of sample before sample is excluded
     """
-    #fix_vcf_version(datapath + 'vcf_files/')
-    #filter_and_combine_vcfs(datapath + 'vcf_files/')
+    filter_and_combine_vcfs(datapath + 'vcf_files/')
     if not os.path.exists(datapath + 'output/'):
         os.mkdir(datapath + 'output/')
     if not os.path.exists(datapath + 'plots/'):
         os.mkdir(datapath + 'plots/')
     if not os.path.exists(datapath + 'final_vcfs/'):
         os.mkdir(datapath + 'final_vcfs/')
-    files = []
-    vcf_file = os.listdir(datapath + 'vcf_files/')[-1]
-    # vcftools giving me weird errors
-#     for vcf_file in os.listdir(datapath + 'vcf_files/'):
-#         outname = re.findall('chr[0-9]{1,2}|$', vcf_file)[0]
-#         outname = outname if outname != '' else 'unknown'
-#         cmd = 'vcftools --gzvcf ' + datapath + 'vcf_files/' + vcf_file\
-#             + ' --maf 0.05 --recode --out ' + datapath + 'final_vcfs/' + vcf_file
-#         print(cmd)
-#         cmd = shlex.split(cmd)
-#         sp.run(cmd)
-#         cmd = shlex.split('tabix -p vcf ' + datapath + 'final_vcfs/' + vcf_file)
-#         files.append(datapath + 'final_vcfs/' + vcf_file)
+    filter_and_combine_vcfs()
     # merge VCFs into one VCF
-#     cmd = shlex.split('vcf-merge ' + ' '.join(files) + ' | bgzip -c > merged_vcf.vcf ')
-#     sp.run(cmd)
-#     cmd = shlex.split('tabix -p vcf ' + datapath + 'merged_vcf.vcf')
-#     sp.run(cmd)
+    cmd = shlex.split('bcftools merge ' + ' '.join(files) + ' | bgzip -c > ' + datapath + 'merged_vcf.vcf ')
+    proc = sp.Popen(cmd, stdout=sp.PIPE, stderr=sp.PIPE)
+    while proc.poll() == None:
+        time.sleep(0.1)
+    cmd = shlex.split('bcftools index -t ' + datapath + 'merged_vcf.vcf')
+    proc = sp.Popen(cmd, stdout=sp.PIPE, stderr=sp.PIPE)
+    while proc.poll() == None:
+        time.sleep(0.1)
     # run PCA
     cmd = 'plink2 \
-        --vcf ' + datapath + 'vcf_files/' + vcf_file + '\
+        --vcf ' + datapath + 'final_vcfs/merged_vcf.vcf \
         --make-bed \
         --pca \
         --snps-only \
@@ -223,7 +214,12 @@ def process_vcf(datapath, maf=0.05, geno=0.1, mind=0.05):
         --recode \
         --out ' + datapath + 'output/final'
     cmd = shlex.split(cmd)
-    sp.run(cmd)
+    proc = sp.Popen(cmd, stdout=sp.PIPE, stderr=sp.PIPE)
+    t1 = time.time()
+    while proc.poll() == None:
+        print('Finding PCA... Time: {0:1f} s'.format(time.time() - t1), end='\r')
+        time.sleep(0.1)
+    print()
     vec = pd.read_csv(datapath + 'output/final.eigenvec', sep='\t')
     val = pd.read_csv(datapath + 'output/final.eigenval')
     pca_plot = sns.scatterplot(vec['PC1'], vec['PC2'])
@@ -237,6 +233,8 @@ def fix_vcf_version(datapath):
     Keyword arguments:
     datapath -- string representing the absolute path to the directory containing vcf files
     """
+    to_fix = []
+    t1 = time.time()
     # Prepare vcf files for analysis by making sure they are compatible with vcftools
     for vcf_file in os.listdir(datapath):
         # if zipped, unzip vcf file and assert that version is < 4.2
@@ -252,7 +250,11 @@ def fix_vcf_version(datapath):
                     fname = fname[:-3]
                     # replace version number
                     cmd = shlex.split("sed 's/^##fileformat=VCFv4.3/##fileformat=VCFv4.2/' " + \
-                                     datapath + fname)
+                                     datapath + fname + ' > ' + datapath + fname[:-3] + '.tmp.vcf')
+                    sp.run(cmd)
+                    cmd = shlex.split("rm " + datapath + fname)
+                    sp.run(cmd)
+                    cmd = shlex.split("mv " + datapath + fname[:-3] + '.tmp.vcf ' + datapath + fname)
                     sp.run(cmd)
         # assert that version is < 4.2
         elif vcf_file[-4:] == '.vcf':
@@ -262,7 +264,11 @@ def fix_vcf_version(datapath):
                     fname = re.findall("([^\/]+$)", vcf_file)[-1][:-3]
                     # replace version number
                     cmd = shlex.split("sed 's/^##fileformat=VCFv4.3/##fileformat=VCFv4.2/' " + \
-                                     datapath + fname)
+                                     datapath + fname + ' > ' + datapath + fname[:-3] + '.new.vcf')
+                    sp.run(cmd)
+                    cmd = shlex.split("rm " + datapath + fname)
+                    sp.run(cmd)
+                    cmd = shlex.split("mv " + datapath + fname[:-3] + '.new.vcf ' + datapath + fname)
                     sp.run(cmd)
 
 def filter_and_combine_vcfs(datapath, snp_treshold=0.05):
@@ -273,4 +279,11 @@ def filter_and_combine_vcfs(datapath, snp_treshold=0.05):
     datapath -- string representing the absolute path to the directory containing vcf files
     snp_treshold -- how common SNP must be to be included
     """
+    cmd = shlex.split('./src/filter_vcfs.sh')
+    proc = sp.Popen(cmd)
+    t1 = time.time()
+    while proc.poll() == None:
+        print('Filtering VCFs... Time: {0:1f} s'.format(time.time() - t1), end='\r')
+        time.sleep(0.1)
+    print()
     
