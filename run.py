@@ -32,7 +32,6 @@ def main():
     download(datapath, **cfg['data'])
     
     # Process data
-    if sys.argv[2] == 'process':
-        process(datapath, cfg['data']['ref_file'], cfg['options'])
+    process(datapath, cfg['data']['ref_file'], cfg['options'])
         
 main()
