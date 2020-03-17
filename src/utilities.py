@@ -7,6 +7,8 @@ import subprocess as sp
 import time
 import matplotlib.pyplot as plt
 import seaborn as sns
+from mpl_toolkits.mplot3d import Axes3D
+import matplotlib.colors as mcolors
 import re
 import json
 import time
@@ -14,6 +16,17 @@ import gzip
 from ftplib import FTP
 
 def download(datapath, fastq_files, bam_files, vcf_files, ref_file, ftp_path=None):
+    """
+    Downloads all the files
+
+    Keyword arguments:
+    datapath -- string representing the absolute path to the directory to download data into
+    fastq_files -- list of fastq files to download
+    bam_files -- list of bam files to download
+    vcf_files -- list of vcf files to download
+    ref_file -- path to reference genome file to download
+    ftp_path -- path to ftp server, if this is defined then download will use ftp
+    """
     # Create data directories
     if not os.path.exists(datapath):
         os.mkdir(datapath)
@@ -48,7 +61,14 @@ def download(datapath, fastq_files, bam_files, vcf_files, ref_file, ftp_path=Non
     print("VCF files done. Time: {0:.0f} s".format(t2 - t1))
         
 def process(datapath, ref_file, options):
-    
+    """
+    Processes all the files
+
+    Keyword arguments:
+    datapath -- string representing the absolute path to the directory to download data into
+    ref_file -- path to reference genome file, which has been downloaded locally
+    options -- options for the PCA analysis
+    """
     print("--------------------Processing---------------------")
     # Still having issues with FASTQ and BAM
 #     print("Processing FASTQ files...")
@@ -60,10 +80,14 @@ def process(datapath, ref_file, options):
 #     process_bam(datapath, ref_file)
 #     t1 = time.time()
 #     print("BAM files done. Time: {0:.0f} s".format(t1 - t2))
+    t1 = time.time()
     print("Processing VCF files...")
     process_vcf(datapath, **options)
     t2 = time.time()
     print("VCF files done. Time: {0:.0f} s".format(t2 - t1))
+    print("Creating plot...")
+    create_plot()
+    print("Plot done. Saved to final_plot.png")
     
 def download_fastqs(fastq_files, ref_file, datapath, ftp=None):
     """
@@ -157,6 +181,13 @@ def download_vcfs(vcf_files, datapath, ftp=None):
             sp.run(cmd)
 
 def process_fastq(datapath, ref_file):
+    """
+    Processes FASTQ files and converts them into BAM files
+
+    Keyword arguments:
+    datapath -- path pointing to where the FASTQ files have been downloaded
+    ref_file -- path to reference genome file
+    """
     ref_file = re.findall("([^/]+$)", ref_file)[-1]
     path_to_ref = datapath + 'ref_genome/' + ref_file
     for fastq_file in os.listdir(datapath + 'fastq_files/'):
@@ -166,6 +197,13 @@ def process_fastq(datapath, ref_file):
         sp.run(cmd)
 
 def process_bam(datapath, ref_file):
+    """
+    Processes BAM files and converts them into VCF files
+
+    Keyword arguments:
+    datapath -- path pointing to where the VCF files have been downloaded
+    ref_file -- path to reference genome file
+    """
     ref_file = re.findall("([^/]+$)", ref_file)[-1]
     path_to_ref = datapath + 'ref_genome/' + ref_file
     cmd = 'samtools mpileup ' + path_to_ref + ' '
@@ -175,9 +213,9 @@ def process_bam(datapath, ref_file):
     cmd = shlex.split(cmd)
     sp.run(cmd)
 
-def process_vcf(datapath, maf=0.05, geno=0.1, mind=0.05):
+def process_vcf(datapath, maf=0.05, geno=0.1, mind=0.05, sample=0.01):
     """
-    Processes VCF files and outputs a PCA plot
+    Processes VCF files into PCA eigenvector and eigenvalue
 
     Keyword arguments:
     datapath -- String representing path to directory containing VCF files
@@ -185,28 +223,29 @@ def process_vcf(datapath, maf=0.05, geno=0.1, mind=0.05):
     geno -- Maximum missingness of variant before variant is excluded
     mind -- Maximum missingness of sample before sample is excluded
     """
-    filter_and_combine_vcfs(datapath + 'vcf_files/')
     if not os.path.exists(datapath + 'output/'):
         os.mkdir(datapath + 'output/')
-    if not os.path.exists(datapath + 'plots/'):
-        os.mkdir(datapath + 'plots/')
     if not os.path.exists(datapath + 'final_vcfs/'):
         os.mkdir(datapath + 'final_vcfs/')
+    # Filter and merge VCFs
     filter_and_combine_vcfs()
-    # merge VCFs into one VCF
-    cmd = shlex.split('bcftools merge ' + ' '.join(files) + ' | bgzip -c > ' + datapath + 'merged_vcf.vcf ')
+    # Take a small sample from the merged VCF
+    cmd = 'gatk SelectVariants \
+        -V ' + datapath + '/merged_vcf.vcf \
+        -fraction ' + str(sample) + ' \
+        -O ' + datapath + '/final.vcf'
+    cmd = shlex.split(cmd)
     proc = sp.Popen(cmd, stdout=sp.PIPE, stderr=sp.PIPE)
+    t1 = time.time()
     while proc.poll() == None:
+        print('Sampling from VCF... Time: {0:.0f} s'.format(time.time() - t1), end='\r')
         time.sleep(0.1)
-    cmd = shlex.split('bcftools index -t ' + datapath + 'merged_vcf.vcf')
-    proc = sp.Popen(cmd, stdout=sp.PIPE, stderr=sp.PIPE)
-    while proc.poll() == None:
-        time.sleep(0.1)
+    print()
     # run PCA
     cmd = 'plink2 \
-        --vcf ' + datapath + 'final_vcfs/merged_vcf.vcf \
+        --vcf ' + datapath + '/final.vcf \
         --make-bed \
-        --pca \
+        --pca approx biallelc\
         --snps-only \
         --maf ' + str(maf) + ' \
         --geno ' + str(geno) + ' \
@@ -217,61 +256,11 @@ def process_vcf(datapath, maf=0.05, geno=0.1, mind=0.05):
     proc = sp.Popen(cmd, stdout=sp.PIPE, stderr=sp.PIPE)
     t1 = time.time()
     while proc.poll() == None:
-        print('Finding PCA... Time: {0:1f} s'.format(time.time() - t1), end='\r')
+        print('Finding PCA... Time: {0:.0f} s'.format(time.time() - t1), end='\r')
         time.sleep(0.1)
     print()
-    vec = pd.read_csv(datapath + 'output/final.eigenvec', sep='\t')
-    val = pd.read_csv(datapath + 'output/final.eigenval')
-    pca_plot = sns.scatterplot(vec['PC1'], vec['PC2'])
-    pca_plot.figure.savefig( + 'plots/final.png')
-    print('PCA Plot saved to ' + datapath + 'plots/final.png')
 
-def fix_vcf_version(datapath):
-    """
-    Changes all the VCF files in the directory to be compatible with vcftools
-
-    Keyword arguments:
-    datapath -- string representing the absolute path to the directory containing vcf files
-    """
-    to_fix = []
-    t1 = time.time()
-    # Prepare vcf files for analysis by making sure they are compatible with vcftools
-    for vcf_file in os.listdir(datapath):
-        # if zipped, unzip vcf file and assert that version is < 4.2
-        if vcf_file[-7:] == '.vcf.gz':
-            with gzip.open(datapath + vcf_file, 'rt') as f:
-                head = f.readline()
-                # if version not compatible with vcftools, have to fix it
-                if 'VCFv4.3' in head:
-                    fname = re.findall("([^\/]+$)", vcf_file)[-1]
-                    # unpack file to replace version number
-                    cmd = shlex.split('gzip -d ' + datapath + fname)
-                    sp.run(cmd)
-                    fname = fname[:-3]
-                    # replace version number
-                    cmd = shlex.split("sed 's/^##fileformat=VCFv4.3/##fileformat=VCFv4.2/' " + \
-                                     datapath + fname + ' > ' + datapath + fname[:-3] + '.tmp.vcf')
-                    sp.run(cmd)
-                    cmd = shlex.split("rm " + datapath + fname)
-                    sp.run(cmd)
-                    cmd = shlex.split("mv " + datapath + fname[:-3] + '.tmp.vcf ' + datapath + fname)
-                    sp.run(cmd)
-        # assert that version is < 4.2
-        elif vcf_file[-4:] == '.vcf':
-            with open(datapath + vcf_file, 'rt') as f:
-                head = f.readline()
-                if 'VCFv4.3' in head:
-                    fname = re.findall("([^\/]+$)", vcf_file)[-1][:-3]
-                    # replace version number
-                    cmd = shlex.split("sed 's/^##fileformat=VCFv4.3/##fileformat=VCFv4.2/' " + \
-                                     datapath + fname + ' > ' + datapath + fname[:-3] + '.new.vcf')
-                    sp.run(cmd)
-                    cmd = shlex.split("rm " + datapath + fname)
-                    sp.run(cmd)
-                    cmd = shlex.split("mv " + datapath + fname[:-3] + '.new.vcf ' + datapath + fname)
-                    sp.run(cmd)
-
-def filter_and_combine_vcfs(datapath, snp_treshold=0.05):
+def filter_and_combine_vcfs():
     """
     Filters out variants below a specific treshold, combines vcfs into a single vcfs
 
@@ -283,7 +272,50 @@ def filter_and_combine_vcfs(datapath, snp_treshold=0.05):
     proc = sp.Popen(cmd)
     t1 = time.time()
     while proc.poll() == None:
-        print('Filtering VCFs... Time: {0:1f} s'.format(time.time() - t1), end='\r')
-        time.sleep(0.1)
+        print('Filtering VCFs... Time: {0:.0f} s'.format(time.time() - t1), end='\r')
+        time.sleep(1)
     print()
+    
+    
+def create_plot():
+    """
+    Creates the final plots of PCA colored by population
+    """
+    if not os.path.exists('plots/'):
+        os.mkdir('plots/')
+    # Read PCA values and populations
+    vec = pd.read_csv('./data/output/final.eigenvec', sep=' ', header=None)
+    vec = vec.drop(0, axis=1)
+    val = pd.read_csv('./data/output/final.eigenval', header=None)
+    sampop = pd.read_excel('pop_data/sample_populations.xlsx')
+    popnames = pd.read_csv('pop_data/population_names.tsv', sep='\t')
+
+    # Clean column names
+    cols = ['Sample']
+    cols.extend(['PCA' + str(i) for i in range(1, 21)])
+    vec.columns = cols
+
+    # Join PCA vector with population values
+    vec = pd.merge(vec, sampop[['Sample', 'Population', 'Population Description']], left_on='Sample', right_on='Sample')
+    vec = pd.merge(vec, popnames[['Population Code', 'Super Population']], left_on='Population', right_on='Population Code')
+
+    # Define colors for populations
+    colors = ['#FF6666', '#FF8000', '#B2FF66', '#6666FF', '#FF66B2']
+
+    # Create plot
+    sns.set_style("whitegrid", {'axes.grid' : False})
+
+    fig = plt.figure(figsize=(6,6))
+    ax = Axes3D(fig)
+    for i, pop in enumerate(vec['Super Population'].unique()):
+        subset = vec[vec['Super Population'] == pop]
+        ax.scatter(subset['PCA1'], subset['PCA2'], subset['PCA3'], c=colors[i], marker='o', label=pop)
+        ax.set_xlabel('PCA1')
+        ax.set_ylabel('PCA2')
+        ax.set_zlabel('PCA3')
+
+    ax.legend()
+    # Save figure
+    fig.savefig('plots/final_plot.png')
+    
     
