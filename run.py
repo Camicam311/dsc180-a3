@@ -8,20 +8,20 @@ def main():
     # Check argument length
     if len(sys.argv) != 2: 
         print('Usage:\n\
-               python ./src/run.py {data | data-test | data-ftp} ')
+               python ./src/run.py {run-project | run-ftp | test-project} ')
         return
     cfg_opt = sys.argv[1]
     cfg_file = None
     # Make sure config file exists
-    if cfg_opt == 'data':
+    if cfg_opt == 'run-project':
         cfg_file = './config/data.json'
-    elif cfg_opt == 'data-test':
+    elif cfg_opt == 'test-project':
         cfg_file = './config/data-test.json'
-    elif cfg_opt == 'data-test':
+    elif cfg_opt == 'run-ftp':
         cfg_file = './config/data-ftp.json'
     else:
         print('Usage:\n\
-               python ./src/run.py {data | data-test | data-ftp} ')
+               python ./src/run.py {run-project | run-ftp | test-project} ')
         return
     
     # Load config
