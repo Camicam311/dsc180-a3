@@ -231,19 +231,19 @@ def process_vcf(datapath, maf=0.05, geno=0.1, mind=0.05, sample=0.01):
     if not os.path.exists(datapath + 'final_vcfs/'):
         os.mkdir(datapath + 'final_vcfs/')
     # Filter and merge VCFs
-    filter_and_combine_vcfs()
+    combine_vcfs()
     # Take a small sample from the merged VCF
-    cmd = 'gatk SelectVariants \
-        -V ' + datapath + '/merged_vcf.vcf.gz \
-        -fraction ' + str(sample) + ' \
-        -O ' + datapath + '/final.vcf.gz'
-    cmd = shlex.split(cmd)
-    proc = sp.Popen(cmd, stdout=sp.PIPE, stderr=sp.PIPE)
-    t1 = time.time()
-    while proc.poll() == None:
-        print('Sampling from VCF... Time: {0:.0f} s'.format(time.time() - t1), end='\r')
-        time.sleep(0.1)
-    print()
+#     cmd = 'gatk SelectVariants \
+#         -V ' + datapath + '/merged_vcf.vcf.gz \
+#         -fraction ' + str(sample) + ' \
+#         -O ' + datapath + '/final.vcf.gz'
+#     cmd = shlex.split(cmd)
+#     proc = sp.Popen(cmd, stdout=sp.PIPE, stderr=sp.PIPE)
+#     t1 = time.time()
+#     while proc.poll() == None:
+#         print('Sampling from VCF... Time: {0:.0f} s'.format(time.time() - t1), end='\r')
+#         time.sleep(0.1)
+#     print()
     # run PCA
     cmd = 'plink2 \
         --vcf ' + datapath + '/final.vcf.gz \
@@ -263,15 +263,15 @@ def process_vcf(datapath, maf=0.05, geno=0.1, mind=0.05, sample=0.01):
         time.sleep(0.1)
     print()
 
-def filter_and_combine_vcfs():
+def combine_vcfs():
     """
-    Filters out variants below a specific treshold, combines vcfs into a single vcfs
+    Combines vcfs into a single vcf and samples from the vcf to produce a smaller dataset to run PCA on
 
     Keyword arguments:
     datapath -- string representing the absolute path to the directory containing vcf files
     snp_treshold -- how common SNP must be to be included
     """
-    cmd = shlex.split('./src/filter_vcfs.sh')
+    cmd = shlex.split('./src/merge_vcfs.sh')
     proc = sp.Popen(cmd)
     while proc.poll() == None:
         time.sleep(1)
