@@ -223,17 +223,20 @@ def process_vcf(datapath, maf=0.05, geno=0.1, mind=0.05, sample=0.01):
     geno -- Maximum missingness of variant before variant is excluded
     mind -- Maximum missingness of sample before sample is excluded
     """
+    t0 = time.time()
     if not os.path.exists(datapath + 'output/'):
         os.mkdir(datapath + 'output/')
+    if not os.path.exists(datapath + 'temp_vcfs/'):
+        os.mkdir(datapath + 'temp_vcfs/')
     if not os.path.exists(datapath + 'final_vcfs/'):
         os.mkdir(datapath + 'final_vcfs/')
     # Filter and merge VCFs
     filter_and_combine_vcfs()
     # Take a small sample from the merged VCF
     cmd = 'gatk SelectVariants \
-        -V ' + datapath + '/merged_vcf.vcf \
+        -V ' + datapath + '/merged_vcf.vcf.gz \
         -fraction ' + str(sample) + ' \
-        -O ' + datapath + '/final.vcf'
+        -O ' + datapath + '/final.vcf.gz'
     cmd = shlex.split(cmd)
     proc = sp.Popen(cmd, stdout=sp.PIPE, stderr=sp.PIPE)
     t1 = time.time()
@@ -243,9 +246,9 @@ def process_vcf(datapath, maf=0.05, geno=0.1, mind=0.05, sample=0.01):
     print()
     # run PCA
     cmd = 'plink2 \
-        --vcf ' + datapath + '/final.vcf \
+        --vcf ' + datapath + '/final.vcf.gz \
         --make-bed \
-        --pca approx biallelc\
+        --pca \
         --snps-only \
         --maf ' + str(maf) + ' \
         --geno ' + str(geno) + ' \
@@ -270,9 +273,7 @@ def filter_and_combine_vcfs():
     """
     cmd = shlex.split('./src/filter_vcfs.sh')
     proc = sp.Popen(cmd)
-    t1 = time.time()
     while proc.poll() == None:
-        print('Filtering VCFs... Time: {0:.0f} s'.format(time.time() - t1), end='\r')
         time.sleep(1)
     print()
     
